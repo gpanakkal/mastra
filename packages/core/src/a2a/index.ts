@@ -1,2 +1,1 @@
-export * from './types';
-export * from './error';
+export type * from '@a2a-js/sdk';
