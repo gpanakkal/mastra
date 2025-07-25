@@ -551,37 +551,7 @@ export class Memory extends MastraMemory {
       let indexName: Promise<string>;
       await Promise.all(
         updatedMessages.map(async message => {
-          let textForEmbedding: string | null = null;
-
-          if (MessageList.isMastraMessageV2(message)) {
-            if (
-              message.content.content &&
-              typeof message.content.content === 'string' &&
-              message.content.content.trim() !== ''
-            ) {
-              textForEmbedding = message.content.content;
-            } else if (message.content.parts && message.content.parts.length > 0) {
-              // Extract text from all text parts, concatenate
-              const joined = message.content.parts
-                .filter(part => part.type === 'text')
-                .map(part => (part as TextPart).text)
-                .join(' ')
-                .trim();
-              if (joined) textForEmbedding = joined;
-            }
-          } else if (MessageList.isMastraMessageV1(message)) {
-            if (message.content && typeof message.content === 'string' && message.content.trim() !== '') {
-              textForEmbedding = message.content;
-            } else if (message.content && Array.isArray(message.content) && message.content.length > 0) {
-              // Extract text from all text parts, concatenate
-              const joined = message.content
-                .filter(part => part.type === 'text')
-                .map(part => part.text)
-                .join(' ')
-                .trim();
-              if (joined) textForEmbedding = joined;
-            }
-          }
+          const textForEmbedding: string | null = this.prepMessageForEmbedding(message);
 
           if (!textForEmbedding) return;
 
@@ -943,7 +913,71 @@ ${
     if (messages.length === 0) return [];
 
     // TODO: Possibly handle updating the vector db here when a message is updated.
+    try {
+      const updateResult = await this.storage.updateMessages({ messages });
+      messages.forEach(async message => {
+        const textForEmbedding = this.prepMessageForEmbedding(message); // TODO: improve `isMastraMessage` assertions or narrow message type first
+        if (!textForEmbedding) {
+          return;
+        }
+        const { embeddings, chunks, dimension } = await this.embedMessageContent(textForEmbedding);
+        const indexName = await this.createEmbeddingIndex(dimension).then(result => result.indexName);
+        if (typeof this.vector === `undefined`) {
+          throw new Error(
+            `Tried to update messages in index ${indexName} but this Memory instance doesn't have an attached vector db.`,
+          );
+        }
+        this.vector.updateVector({
+          indexName: indexName,
+          id: message.id,
+          update: {
+            vector: embeddings[0],
+            metadata: {
+              chunks,
+            },
+          },
+        });
+      });
 
-    return this.storage.updateMessages({ messages });
+      return updateResult;
+    } catch (error) {
+      throw error; // TODO: handle error
+    }
+  }
+
+  private prepMessageForEmbedding(message: MastraMessageV1 | MastraMessageV2): string | null {
+    let textForEmbedding: string | null = null;
+
+    if (MessageList.isMastraMessageV2(message)) {
+      if (
+        message.content.content &&
+        typeof message.content.content === 'string' &&
+        message.content.content.trim() !== ''
+      ) {
+        textForEmbedding = message.content.content;
+      } else if (message.content.parts && message.content.parts.length > 0) {
+        // Extract text from all text parts, concatenate
+        const joined = message.content.parts
+          .filter(part => part.type === 'text')
+          .map(part => (part as TextPart).text)
+          .join(' ')
+          .trim();
+        if (joined) textForEmbedding = joined;
+      }
+    } else if (MessageList.isMastraMessageV1(message)) {
+      if (message.content && typeof message.content === 'string' && message.content.trim() !== '') {
+        textForEmbedding = message.content;
+      } else if (message.content && Array.isArray(message.content) && message.content.length > 0) {
+        // Extract text from all text parts, concatenate
+        const joined = message.content
+          .filter(part => part.type === 'text')
+          .map(part => part.text)
+          .join(' ')
+          .trim();
+        if (joined) textForEmbedding = joined;
+      }
+    }
+
+    return textForEmbedding;
   }
 }
