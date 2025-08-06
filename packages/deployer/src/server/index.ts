@@ -14,7 +14,6 @@ import { cors } from 'hono/cors';
 import { logger } from 'hono/logger';
 import { timeout } from 'hono/timeout';
 import { describeRoute, openAPISpecs } from 'hono-openapi';
-import devcert from 'devcert';
 import { getAgentCardByIdHandler, getAgentExecutionHandler } from './handlers/a2a';
 import { authenticationMiddleware, authorizationMiddleware } from './handlers/auth';
 import { handleClientsRefresh, handleTriggerClientsRefresh } from './handlers/client';
@@ -501,8 +500,14 @@ export async function createNodeServer(mastra: Mastra, options: ServerBundleOpti
 
   const host = serverOptions?.host ?? 'localhost';
   const port = serverOptions?.port ?? (Number(process.env.PORT) || 4111);
-  const httpsEnabled = process.argv.includes('--https') ?? process.env.HTTPS?.toUpperCase() === 'TRUE';
-  const { key, cert } = httpsEnabled ? await devcert.certificateFor(host) : {};
+
+  const keyArg = process.argv.find(arg => arg.startsWith('--https-key '));
+  const certArg = process.argv.find(arg => arg.startsWith('--https-cert '));
+  const key =
+    serverOptions?.https?.key ?? (keyArg ? Buffer.from(keyArg.replace('--https-key ', ''), 'base64') : undefined);
+  const cert =
+    serverOptions?.https?.cert ?? (certArg ? Buffer.from(certArg.replace('--https-cert ', ''), 'base64') : undefined);
+  const httpsEnabled = key && cert;
 
   const server = serve(
     {

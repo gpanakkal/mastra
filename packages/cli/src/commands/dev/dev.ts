@@ -6,6 +6,7 @@ import { getServerOptions } from '@mastra/deployer/build';
 import { isWebContainer } from '@webcontainer/env';
 import { execa } from 'execa';
 import getPort from 'get-port';
+import devcert from 'devcert';
 
 import { logger } from '../../utils/logger.js';
 
@@ -19,7 +20,12 @@ const startServer = async (
   dotMastraPath: string,
   port: number,
   env: Map<string, string>,
-  startOptions: { inspect?: boolean; inspectBrk?: boolean; customArgs?: string[]; https?: boolean } = {},
+  startOptions: {
+    inspect?: boolean;
+    inspectBrk?: boolean;
+    customArgs?: string[];
+    https?: { key: Buffer<ArrayBufferLike> | undefined; cert: Buffer<ArrayBufferLike> | undefined };
+  } = {},
   errorRestartCount = 0,
 ) => {
   let serverIsReady = false;
@@ -52,7 +58,9 @@ const startServer = async (
     commands.push('index.mjs');
 
     if (startOptions.https) {
-      commands.push('--https');
+      const { key, cert } = startOptions.https;
+      commands.push(`--https-key ${key?.toString('base64')}`);
+      commands.push(`--https-cert ${cert?.toString('base64')}`);
     }
 
     currentServerProcess = execa(process.execPath, commands, {
@@ -185,7 +193,6 @@ export async function dev({
 
   const defaultToolsPath = join(mastraDir, 'tools/**/*.{js,ts}');
   const discoveredTools = [defaultToolsPath, ...(tools || [])];
-  const startOptions = { inspect, inspectBrk, https, customArgs };
 
   const fileService = new FileService();
   const entryFile = fileService.getFirstExistingFile([join(mastraDir, 'index.ts'), join(mastraDir, 'index.js')]);
@@ -204,6 +211,10 @@ export async function dev({
   }
 
   const serverOptions = await getServerOptions(entryFile, join(dotMastraPath, 'output'));
+
+  const { key, cert } = https ? await devcert.certificateFor(serverOptions?.host ?? 'localhost') : {};
+
+  const startOptions = { inspect, inspectBrk, customArgs, https: https ? { key, cert } : undefined };
 
   let portToUse = port ?? serverOptions?.port ?? process.env.PORT;
   if (!portToUse || isNaN(Number(portToUse))) {

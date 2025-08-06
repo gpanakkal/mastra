@@ -107,6 +107,13 @@ export type ServerConfig = {
   /**
    * Build configuration for the server
    */
+  /**
+   * HTTPs configuration for the server
+   */
+  https?: {
+    key: Buffer<ArrayBufferLike>;
+    cert: Buffer<ArrayBufferLike>;
+  };
   build?: {
     /**
      * Enable Swagger UI
